@@ -4,7 +4,7 @@ if (fs.existsSync(".env"))
 
 module.exports = {
     SESSION_ID: process.env.SESSION_ID,
-    DATABASE_URL: process.env.DATABASE_URL, // Postress(Get one for free from neon.tech/supabase/render...will fallback to path: ./gift/database/database.db if not provided
+    DATABASE_URL: process.env.DATABASE_URL, // Postress(Get one for free from neon.tech/supabase/render)...will fallback to path: ./gift/database/database.db if not provided
 };
 
 let fileName = require.resolve(__filename);
