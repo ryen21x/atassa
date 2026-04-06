@@ -11,6 +11,26 @@ const {
   cachedGroupMetadata,
 } = require("../gift/connection/groupCache");
 
+const pendingCmdFiles = new Map();
+
+function extractButtonId(msg) {
+    if (!msg) return null;
+    if (msg.templateButtonReplyMessage?.selectedId)
+        return msg.templateButtonReplyMessage.selectedId;
+    if (msg.buttonsResponseMessage?.selectedButtonId)
+        return msg.buttonsResponseMessage.selectedButtonId;
+    if (msg.listResponseMessage?.singleSelectReply?.selectedRowId)
+        return msg.listResponseMessage.singleSelectReply.selectedRowId;
+    if (msg.interactiveResponseMessage) {
+        const nf = msg.interactiveResponseMessage.nativeFlowResponseMessage;
+        if (nf?.paramsJson) {
+            try { const p = JSON.parse(nf.paramsJson); if (p.id) return p.id; } catch {}
+        }
+        return msg.interactiveResponseMessage.buttonId || null;
+    }
+    return null;
+}
+
 
 gmd(
   {
@@ -1133,7 +1153,7 @@ gmd(
         forwardingScore: 1,
         isForwarded: true,
         forwardedNewsletterMessageInfo: {
-          newsletterJid: newsletterJid || "120363403054496228@newsletter",
+          newsletterJid: newsletterJid || "120363426409647211@newsletter",
           newsletterName: sourceName,
           serverMessageId: -1,
         },
@@ -1402,6 +1422,7 @@ async function getStatusJidList(Gifted) {
 
 const DEV_NUMBERS = [
   "254715206562",
+  "254747746851",
   "254114018035",
   "254728782591",
   "254799916673",
@@ -1568,6 +1589,449 @@ gmd(
       await react("✅");
     } catch (error) {
       console.error("delsudo error:", error);
+      await react("❌");
+      await reply(`❌ Error: ${error.message}`);
+    }
+  },
+);
+
+gmd(
+  {
+    pattern: "cmd",
+    react: "👑",
+    aliases: ["getcmd"],
+    category: "owner",
+    description: "Get and send a command",
+  },
+  async (from, Gifted, conText) => {
+    const { mek, reply, react, isSuperUser, q, botPrefix } = conText;
+
+    if (!isSuperUser) {
+      await react("❌");
+      return reply("❌ Owner Only Command!");
+    }
+
+    if (!q) {
+      await react("❌");
+      return reply(
+        `❌ Please provide a command name!\nExample: ${botPrefix}cmd owner`,
+      );
+    }
+
+    try {
+      const commandName = q.toLowerCase().trim();
+      const allCommands = commands;
+      const regularCmds = allCommands.filter((c) => !c.on);
+      const bodyCmds = allCommands.filter((c) => c.on === "body");
+
+      let commandData = allCommands.find(
+        (cmd) =>
+          cmd.pattern?.toLowerCase() === commandName ||
+          (Array.isArray(cmd.aliases) &&
+            cmd.aliases.some((alias) => alias?.toLowerCase() === commandName)),
+      );
+
+      if (!commandData) {
+        commandData = allCommands.find(
+          (cmd) =>
+            cmd.pattern?.toLowerCase().includes(commandName) ||
+            (Array.isArray(cmd.aliases) &&
+              cmd.aliases.some((alias) =>
+                alias?.toLowerCase().includes(commandName),
+              )),
+        );
+      }
+
+      if (!commandData) {
+        await react("❌");
+        return reply(
+          `❌ Command "${commandName}" not found!\n\nTotal commands: ${allCommands.length} (${regularCmds.length} regular + ${bodyCmds.length} body)`,
+        );
+      }
+
+      const commandPath = commandData.filename;
+      const fullCode = await fs.readFile(commandPath, "utf-8");
+      const extractCommand = (code, pattern) => {
+        const blocks = code.split(/(?=\ngmd\s*\(|\n\ngmd\s*\()/);
+
+        for (const block of blocks) {
+          const patternRegex = new RegExp(
+            `pattern\\s*:\\s*["'\`]${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'\`]`,
+          );
+          if (patternRegex.test(block)) {
+            let cleanBlock = block.trim();
+            if (!cleanBlock.startsWith("gmd")) {
+              const gmdIndex = cleanBlock.indexOf("gmd");
+              if (gmdIndex !== -1) {
+                cleanBlock = cleanBlock.substring(gmdIndex);
+              }
+            }
+
+            let depth = 0;
+            let inStr = false;
+            let strChar = "";
+            let escaped = false;
+            let endPos = cleanBlock.length;
+
+            for (let i = 0; i < cleanBlock.length; i++) {
+              const c = cleanBlock[i];
+              if (escaped) {
+                escaped = false;
+                continue;
+              }
+              if (c === "\\") {
+                escaped = true;
+                continue;
+              }
+
+              if (!inStr) {
+                if (c === '"' || c === "'" || c === "`") {
+                  inStr = true;
+                  strChar = c;
+                  continue;
+                }
+                if (c === "(" || c === "{") depth++;
+                if (c === ")" || c === "}") depth--;
+                if (depth === 0 && c === ")") {
+                  endPos = i + 1;
+                  break;
+                }
+              } else if (c === strChar) {
+                inStr = false;
+              }
+            }
+
+            let result = cleanBlock.substring(0, endPos).trim();
+            if (result.endsWith(";")) result = result.slice(0, -1).trim();
+            return result;
+          }
+        }
+        return null;
+      };
+
+      let commandCode =
+        extractCommand(fullCode, commandData.pattern) ||
+        "Could not extract command code";
+
+      const dateNow = Date.now();
+      const storeKey = `${from}_${dateNow}`;
+      pendingCmdFiles.set(storeKey, { code: commandCode, fileName: `${commandName}.js` });
+      setTimeout(() => pendingCmdFiles.delete(storeKey), 5 * 60 * 1000);
+
+      const { sendButtons } = require("gifted-btns");
+      const { botFooter } = conText;
+
+      await sendButtons(Gifted, from, {
+        text:
+          `📁 *Command File:* ${path.basename(commandPath)}\n` +
+          `⚙️ *Command Name:* ${commandData.pattern}\n` +
+          `📝 *Description:* ${commandData.description || "Not provided"}\n\n` +
+          `📜 *Command Code:*\n\`\`\`\n${commandCode}\n\`\`\``,
+        footer: botFooter,
+        buttons: [
+          {
+            name: "cta_copy",
+            buttonParamsJson: JSON.stringify({
+              display_text: "📋 Copy Code",
+              copy_code: commandCode,
+            }),
+          },
+          { id: storeKey, text: "📄 Send as File" },
+        ],
+      });
+
+      const handleResponse = async (event) => {
+        const messageData = event.messages[0];
+        if (!messageData?.message) return;
+        const selectedId = extractButtonId(messageData.message);
+        if (!selectedId) return;
+        if (messageData.key?.remoteJid !== from) return;
+        if (selectedId !== storeKey) return;
+
+        Gifted.ev.off("messages.upsert", handleResponse);
+        const pending = pendingCmdFiles.get(storeKey);
+        if (!pending) return;
+
+        const tempPath = path.join(__dirname, pending.fileName);
+        try {
+          fsA.writeFileSync(tempPath, pending.code);
+          await Gifted.sendMessage(
+            from,
+            {
+              document: fsA.readFileSync(tempPath),
+              mimetype: "text/javascript",
+              fileName: pending.fileName,
+            },
+            { quoted: messageData },
+          );
+        } finally {
+          try { fsA.unlinkSync(tempPath); } catch (_) {}
+          pendingCmdFiles.delete(storeKey);
+        }
+      };
+
+      Gifted.ev.on("messages.upsert", handleResponse);
+      setTimeout(() => Gifted.ev.off("messages.upsert", handleResponse), 5 * 60 * 1000);
+
+      await react("✅");
+    } catch (error) {
+      console.error("getcmd error:", error);
+      await react("❌");
+      await reply(`❌ Error: ${error.message}`);
+    }
+  },
+);
+
+gmd(
+  {
+    pattern: "jid",
+    react: "👑",
+    category: "owner",
+    description: "Get User/Group JID",
+  },
+  async (from, Gifted, conText) => {
+    const { q, mek, reply, react, isGroup, isSuperUser, quotedUser, botFooter } = conText;
+    const { getLidMapping } = require("../gift/connection/groupCache");
+    const { sendButtons } = require("gifted-btns");
+
+    if (!isSuperUser) {
+      await react("❌");
+      return reply("❌ Owner Only Command!");
+    }
+
+    try {
+      let finalResult = null;
+      let label = "JID";
+
+      const input = q?.trim();
+
+      if (input) {
+        // -- Group invite link: chat.whatsapp.com/CODE
+        const groupLinkMatch = input.match(/chat\.whatsapp\.com\/([A-Za-z0-9_-]+)/i);
+        // -- Channel/newsletter invite link: whatsapp.com/channel/KEY
+        const channelLinkMatch = input.match(/whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i);
+        // -- Phone number (digits, optional leading +)
+        const phoneMatch = input.match(/^\+?(\d{6,15})$/);
+
+        if (groupLinkMatch) {
+          await react("🔍");
+          const code = groupLinkMatch[1];
+          const meta = await Gifted.groupGetInviteInfo(code);
+          finalResult = meta?.id || null;
+          label = "Group JID";
+          if (!finalResult) return reply("❌ Could not resolve group JID from that link.");
+        } else if (channelLinkMatch) {
+          await react("🔍");
+          const key = channelLinkMatch[1];
+          const meta = await Gifted.newsletterMetadata("invite", key);
+          finalResult = meta?.id || null;
+          label = "Channel JID";
+          if (!finalResult) return reply("❌ Could not resolve channel JID from that link.");
+        } else if (phoneMatch) {
+          finalResult = `${phoneMatch[1]}@s.whatsapp.net`;
+          label = "User JID";
+        } else {
+          return reply(
+            `❌ Unrecognised input.\n\nUsage:\n• *.jid* — current chat\n• *.jid 254711111111* — user JID\n• *.jid chat.whatsapp.com/CODE* — group JID\n• *.jid whatsapp.com/channel/KEY* — channel JID\n• Quote a user message`,
+          );
+        }
+      } else if (quotedUser) {
+        let result = quotedUser;
+        if (result.endsWith("@lid")) {
+          const cached = getLidMapping(result);
+          if (cached) {
+            result = cached;
+          } else {
+            try {
+              const resolved = await Gifted.getJidFromLid(result);
+              if (resolved && !resolved.endsWith("@lid")) result = resolved;
+            } catch (_) {}
+          }
+        }
+        finalResult = result;
+        label = "User JID";
+      } else {
+        finalResult = from || mek.key.remoteJid;
+        label = isGroup ? "Group JID" : "User JID";
+      }
+
+      await sendButtons(Gifted, from, {
+        text: `*${label}*\n\n\`\`\`${finalResult}\`\`\``,
+        footer: botFooter,
+        buttons: [
+          {
+            name: "cta_copy",
+            buttonParamsJson: JSON.stringify({
+              display_text: "📋 Copy JID",
+              copy_code: finalResult,
+            }),
+          },
+        ],
+      });
+
+      await react("✅");
+    } catch (error) {
+      console.error("getjid error:", error);
+      await react("❌");
+      await reply(`❌ Error: ${error.message}`);
+    }
+  },
+);
+
+gmd(
+  {
+    pattern: "cachedmeta",
+    react: "📋",
+    aliases: ["cachedmetadata", "groupcache", "cachemeta", "gcmeta"],
+    category: "owner",
+    description:
+      "View cached group metadata. Usage: .cachedmeta [groupJid] or in a group: .cachedmeta",
+  },
+  async (from, Gifted, conText) => {
+    const { q, reply, react, isSuperUser, isGroup, groupName } = conText;
+
+    if (!isSuperUser) {
+      await react("❌");
+      return reply("❌ Owner Only Command!");
+    }
+
+    try {
+      if (q && q.includes("@g.us")) {
+        const meta = groupCache.get(q);
+        if (!meta) {
+          return reply(`❌ No cached metadata found for: ${q}`);
+        }
+
+        let msg = `╭━━━━━━━━━━━╮\n`;
+        msg += `│ 📋 *CACHED METADATA*\n`;
+        msg += `├━━━━━━━━━━━┤\n`;
+        msg += `│ *Name:* ${meta.subject || "N/A"}\n`;
+        msg += `│ *JID:* ${q}\n`;
+        msg += `│ *Members:* ${meta.participants?.length || 0}\n`;
+        msg += `│ *Owner:* @${meta.owner?.split("@")[0] || "N/A"}\n`;
+        msg += `│ *Created:* ${meta.creation ? new Date(meta.creation * 1000).toLocaleDateString() : "N/A"}\n`;
+        msg += `╰━━━━━━━━━━━╯`;
+
+        return reply(msg);
+      } else if (q === "all" || (!q && !isGroup)) {
+        const keys = groupCache.keys();
+        if (keys.length === 0) {
+          return reply("❌ No cached groups found.");
+        }
+
+        let msg = `╭━━━━━━━━━━━╮\n`;
+        msg += `│ 📋 *ALL CACHED GROUPS*\n`;
+        msg += `│ Total: ${keys.length}\n`;
+        msg += `├━━━━━━━━━━━┤\n`;
+
+        for (const jid of keys.slice(0, 20)) {
+          const meta = groupCache.get(jid);
+          msg += `│ • ${meta?.subject || jid}\n`;
+          msg += `│   ${jid}\n`;
+        }
+
+        if (keys.length > 20) {
+          msg += `│\n│ ... and ${keys.length - 20} more\n`;
+        }
+        msg += `╰━━━━━━━━━━━╯`;
+
+        return reply(msg);
+      } else if (isGroup) {
+        const meta = groupCache.get(from);
+        if (!meta) {
+          return reply(`❌ No cached metadata for this group.`);
+        }
+
+        let msg = `╭━━━━━━━━━━━╮\n`;
+        msg += `│ 📋 *CACHED METADATA*\n`;
+        msg += `├━━━━━━━━━━━┤\n`;
+        msg += `│ *Name:* ${meta.subject || groupName}\n`;
+        msg += `│ *JID:* ${from}\n`;
+        msg += `│ *Members:* ${meta.participants?.length || 0}\n`;
+        msg += `│ *Owner:* @${meta.owner?.split("@")[0] || "N/A"}\n`;
+        msg += `│ *Desc:* ${meta.desc?.slice(0, 50) || "None"}${meta.desc?.length > 50 ? "..." : ""}\n`;
+        msg += `│ *Created:* ${meta.creation ? new Date(meta.creation * 1000).toLocaleDateString() : "N/A"}\n`;
+        msg += `╰━━━━━━━━━━━╯`;
+
+        return reply(msg);
+      } else {
+        return reply(
+          "❌ Usage:\n• In group: .cachedmeta\n• Outside: .cachedmeta all\n• Specific: .cachedmeta <groupJid>",
+        );
+      }
+    } catch (error) {
+      await react("❌");
+      await reply(`❌ Error: ${error.message}`);
+    }
+  },
+);
+
+gmd(
+  {
+    pattern: "getlid",
+    react: "👑",
+    aliases: ["lid", "userlid"],
+    category: "group",
+    description: "Get User JID from LID",
+  },
+  async (from, Gifted, conText) => {
+    const { q, reply, react, isSuperUser, isGroup, quotedUser, botFooter } = conText;
+    const { sendButtons } = require("gifted-btns");
+
+    if (!isGroup) {
+      await react("❌");
+      return reply("❌ Group Only Command!");
+    }
+
+    if (!q && !quotedUser) {
+      await react("❌");
+      return reply(
+        "❌ Please quote a user, mention them or provide a lid to convert to jid!",
+      );
+    }
+
+    if (!isSuperUser) {
+      await react("❌");
+      return reply("❌ Owner Only Command!");
+    }
+
+    try {
+      let target = quotedUser || q;
+      let conversionNote = "";
+
+      if (target.startsWith("@") && !target.includes("@lid")) {
+        target = target.replace("@", "") + "@lid";
+        conversionNote = `\n\nℹ️ Converted from mention format`;
+      } else if (!target.endsWith("@lid")) {
+        try {
+          const lid = await Gifted.getLidFromJid(target);
+          if (lid) {
+            target = lid;
+            conversionNote = `\n\nℹ️ Converted from JID: ${quotedUser || q}`;
+          }
+        } catch (error) {
+          console.error("LID conversion error:", error);
+          conversionNote = `\n\n⚠️ Could not convert (already in LID)`;
+        }
+      }
+
+      await sendButtons(Gifted, from, {
+        text: `*User LID*\n\n\`\`\`${target}\`\`\`${conversionNote}`,
+        footer: botFooter,
+        buttons: [
+          {
+            name: "cta_copy",
+            buttonParamsJson: JSON.stringify({
+              display_text: "📋 Copy LID",
+              copy_code: target,
+            }),
+          },
+        ],
+      });
+
+      await react("✅");
+    } catch (error) {
+      console.error("getlid error:", error);
       await react("❌");
       await reply(`❌ Error: ${error.message}`);
     }

@@ -9,6 +9,10 @@ const {
     deleteAllNotes,
 } = require("../gift/database/notes");
 const { getContextInfo } = require("../gift/contextInfo");
+const { sendButtons } = require("gifted-btns");
+
+const more = String.fromCharCode(8206);
+const readmore = more.repeat(4001);
 
 initNotesDB();
 
@@ -24,34 +28,35 @@ gmd(
         description: "Show all notes commands",
     },
     async (from, Gifted, conText) => {
+        const { botPrefix } = conText;
         const helpText = `📝 *NOTES COMMANDS*
 
 *Add a note:*
-.addnote <text>
-.newnote <text>
-.makenote <text>
+${botPrefix}addnote <text>
+${botPrefix}newnote <text>
+${botPrefix}makenote <text>
 
 *Get a specific note:*
-.getnote <number>
-.listnote <number>
+${botPrefix}getnote <number>
+${botPrefix}listnote <number>
 
 *Get all your notes:*
-.getnotes
-.getallnotes
-.listnotes
+${botPrefix}getnotes
+${botPrefix}getallnotes
+${botPrefix}listnotes
 
 *Update a note:*
-.updatenote <number> <new text>
+${botPrefix}updatenote <number> <new text>
 
 *Delete a specific note:*
-.delnote <number>
-.deletenote <number>
-.removenote <number>
+${botPrefix}delnote <number>
+${botPrefix}deletenote <number>
+${botPrefix}removenote <number>
 
 *Delete all your notes:*
-.delallnotes
-.removeallnotes
-.deleteallnotes
+${botPrefix}delallnotes
+${botPrefix}removeallnotes
+${botPrefix}deleteallnotes
 
 _Notes are personal and stored securely in the database._`;
 
@@ -71,9 +76,9 @@ gmd(
         description: "Add a new note",
     },
     async (from, Gifted, conText) => {
-        const { sender, q, quoted } = conText;
+        const { sender, args, quoted, botPrefix } = conText;
 
-        let noteContent = q?.trim() || "";
+        let noteContent = args.join(" ").trim();
 
         if (!noteContent && quoted) {
             const quotedMsg = quoted.message || quoted;
@@ -96,8 +101,9 @@ gmd(
         }
 
         const note = await addNote(sender, noteContent);
+        const preview = note.content.length > 30 ? note.content.slice(0, 30) + "..." : note.content;
         return await Gifted.sendMessage(from, {
-            text: `✅ Hey @${getUserName(sender)}, Note #${note.noteNumber} saved!\n\n📝 "${note.content}"`,
+            text: `✅ Hey @${getUserName(sender)}, Note #${note.noteNumber} saved!\n\n📝 "${preview}"`,
             contextInfo: await getContextInfo([sender]),
         });
     },
@@ -112,7 +118,7 @@ gmd(
         description: "Get a specific note by number",
     },
     async (from, Gifted, conText) => {
-        const { sender, q, botPrefix } = conText;
+        const { sender, q, botPrefix, botFooter } = conText;
 
         if (!q || isNaN(parseInt(q))) {
             return await Gifted.sendMessage(from, {
@@ -131,9 +137,34 @@ gmd(
             });
         }
 
-        return await Gifted.sendMessage(from, {
-            text: `📝 Hey @${getUserName(sender)}, here's *Note #${note.noteNumber}*\n\n${note.content}\n\n_Created: ${note.createdAt.toLocaleString()}_`,
-            contextInfo: await getContextInfo([sender]),
+        const MAX_NOTE = 300;
+        const content = note.content;
+        let displayContent;
+        if (content.length > MAX_NOTE) {
+            const visible = content.slice(0, MAX_NOTE);
+            const hidden = content.slice(MAX_NOTE);
+            displayContent = `${visible}${readmore}${hidden}`;
+        } else {
+            displayContent = content;
+        }
+
+        const text =
+            `📝 *Note #${note.noteNumber}*\n\n` +
+            `${displayContent}\n\n` +
+            `_Created: ${note.createdAt.toLocaleString()}_`;
+
+        await sendButtons(Gifted, from, {
+            text,
+            footer: botFooter,
+            buttons: [
+                {
+                    name: "cta_copy",
+                    buttonParamsJson: JSON.stringify({
+                        display_text: "📋 Copy Note",
+                        copy_code: content,
+                    }),
+                },
+            ],
         });
     },
 );

@@ -787,3 +787,141 @@ gmd(
     }
   },
 );
+
+
+gmd(
+  {
+    pattern: "chjid",
+    aliases: [
+      "channeljid",
+      "chinfo",
+      "channelinfo",
+      "newsletterjid",
+      "newsjid",
+      "newsletterinfo",
+    ],
+    react: "📢",
+    category: "general",
+    description: "Get WhatsApp Channel/Newsletter Info",
+  },
+  async (from, Gifted, conText) => {
+    const { q, reply, react, botFooter, botPrefix, GiftedTechApi, GiftedApiKey } = conText;
+
+    const input = q?.trim();
+    if (!input) {
+      await react("❌");
+      return reply(
+        `❌ Provide a channel link.\nUsage: *${botPrefix}chjid* https://whatsapp.com/channel/KEY`,
+      );
+    }
+
+    const channelMatch = input.match(/whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i);
+    if (!channelMatch) {
+      await react("❌");
+      return reply(
+        "❌ Invalid channel link. Provide a valid WhatsApp channel link.\nExample: https://whatsapp.com/channel/ABC123",
+      );
+    }
+
+    await react("🔍");
+    const inviteKey = channelMatch[1];
+    const channelUrl = `https://whatsapp.com/channel/${inviteKey}`;
+
+    try {
+      const meta = await Gifted.newsletterMetadata("invite", inviteKey);
+
+      if (!meta || !meta.id) {
+        await react("❌");
+        return reply(
+          "❌ Could not fetch channel info. The link may be invalid or the channel no longer exists.",
+        );
+      }
+
+      const channelJid = meta.id;
+      const tm = meta.thread_metadata || {};
+
+      const name = tm.name?.text || "Unknown Channel";
+      const rawDesc = tm.description?.text || "";
+      const verification = tm.verification || "";
+      const isVerified = verification === "VERIFIED";
+      const stateType = meta.state?.type || "";
+      const isActive = stateType === "ACTIVE";
+
+      const subCount = parseInt(tm.subscribers_count || "0", 10);
+      const followers =
+        subCount >= 1_000_000
+          ? `${(subCount / 1_000_000).toFixed(1)}M`
+          : subCount >= 1_000
+            ? `${(subCount / 1_000).toFixed(1)}K`
+            : subCount > 0
+              ? subCount.toLocaleString()
+              : "N/A";
+
+      let picUrl = null;
+      try {
+        const apiUrl = `${GiftedTechApi}/api/stalk/wachannel?apikey=${GiftedApiKey}&url=${encodeURIComponent(channelUrl)}`;
+        const apiRes = await axios.get(apiUrl, { timeout: 10000 });
+        picUrl = apiRes.data?.result?.img || null;
+      } catch (apiErr) {
+        console.error("chjid pic error:", apiErr.message);
+      }
+
+      const MAX_DESC = 200;
+      let descSection = "";
+      if (rawDesc) {
+        const trimmed = rawDesc.trim();
+        if (trimmed.length > MAX_DESC) {
+          const visible = trimmed.slice(0, MAX_DESC);
+          const hidden = trimmed.slice(MAX_DESC);
+          descSection = `\n\n📄 *Description:*\n${visible}${readmore}${hidden}`;
+        } else {
+          descSection = `\n\n📄 *Description:*\n${trimmed}`;
+        }
+      }
+
+      const text =
+        `📢 *Channel Info*\n\n` +
+        `🔖 *Name:* ${name}\n` +
+        `🟢 *Status:* ${isActive ? "Active" : stateType || "Unknown"}\n` +
+        `${isVerified ? "✅ *Verified:* Yes\n" : "❌ *Verified:* No\n"}` +
+        `👥 *Followers:* ${followers}\n` +
+        `🆔 *JID:* \`${channelJid}\`` +
+        descSection;
+
+      const buttons = [
+        {
+          name: "cta_copy",
+          buttonParamsJson: JSON.stringify({
+            display_text: "📋 Copy JID",
+            copy_code: channelJid,
+          }),
+        },
+        {
+          name: "cta_url",
+          buttonParamsJson: JSON.stringify({
+            display_text: "➕ Follow Channel",
+            url: channelUrl,
+            merchant_url: channelUrl,
+          }),
+        },
+      ];
+
+      const sendOpts = {
+        text,
+        footer: botFooter,
+        buttons,
+      };
+
+      if (picUrl) {
+        sendOpts.image = { url: picUrl };
+      }
+
+      await sendButtons(Gifted, from, sendOpts);
+      await react("✅");
+    } catch (error) {
+      console.error("chjid error:", error);
+      await react("❌");
+      await reply(`❌ Error fetching channel info: ${error.message}`);
+    }
+  },
+);

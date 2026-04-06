@@ -83,6 +83,11 @@ gmd(
         sender, isGroup, groupInfo, groupName, participants,
         isSuperAdmin, isAdmin, isBotAdmin, superUser,
         botName, ownerNumber, ownerName,
+        q, args, quotedMsg, quotedUser, quotedKey,
+        pushName, tagged, mentionedJid, repliedMessage,
+        botFooter, botCaption, botVersion, botPic,
+        timeZone, newsletterJid, newsletterUrl,
+        groupAdmins, isSuperUser, authorMessage,
       } = conText;
 
       let result;

@@ -12,13 +12,35 @@ gmd(
     description: "Fetch and display content from a URL",
   },
   async (from, Gifted, conText) => {
-    const { reply, mek, q, formatAudio, formatVideo } = conText;
+    const { reply, mek, q, quotedMsg, formatAudio, formatVideo } = conText;
 
-    if (!q) return reply("❌ Provide a valid URL to fetch.");
+    const extractUrl = (text) => {
+      if (!text) return null;
+      const match = text.match(/https?:\/\/[^\s]+/i);
+      return match ? match[0] : null;
+    };
+
+    const getMsgText = (msg) => {
+      if (!msg) return "";
+      return (
+        msg.conversation ||
+        msg.extendedTextMessage?.text ||
+        msg.imageMessage?.caption ||
+        msg.videoMessage?.caption ||
+        msg.documentMessage?.caption ||
+        msg.buttonsMessage?.contentText ||
+        msg.listMessage?.description ||
+        ""
+      );
+    };
+
+    let url = q?.trim() || extractUrl(getMsgText(quotedMsg));
+
+    if (!url) return reply("❌ Provide a URL or quote a message containing a link.");
+    if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://" + url;
 
     try {
-      const axios = require("axios");
-      const response = await axios.get(q, {
+      const response = await axios.get(url, {
         responseType: "arraybuffer",
         validateStatus: () => true,
         timeout: 60000,
@@ -30,7 +52,7 @@ gmd(
 
       const buffer = Buffer.from(response.data);
 
-      const urlParts = q.split("?")[0].split("/");
+      const urlParts = url.split("?")[0].split("/");
       let filename = urlParts.pop() || "file";
       if (filename.length > 100) filename = filename.substring(0, 100);
 
@@ -43,7 +65,7 @@ gmd(
       if (contentType.includes("image/")) {
         return Gifted.sendMessage(
           from,
-          { image: buffer, caption: q },
+          { image: buffer, caption: url },
           { quoted: mek },
         );
       }
@@ -52,7 +74,7 @@ gmd(
         const formattedVideo = await formatVideo(buffer);
         return Gifted.sendMessage(
           from,
-          { video: formattedVideo, caption: q },
+          { video: formattedVideo, caption: url },
           { quoted: mek },
         );
       }
