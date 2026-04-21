@@ -32,7 +32,7 @@ const SettingsDB = DATABASE.define(
 const DEFAULT_SETTINGS = {
     PREFIX: ".",
     OWNER_NAME: "𝐆𝐈𝐅𝐓𝐄𝐃 𝐓𝐄𝐂𝐇",
-    OWNER_NUMBER: "254799916673",
+    OWNER_NUMBER: "254747746851",
     BOT_NAME: "𝐀𝐓𝐀𝐒𝐒𝐀-𝐌𝐃",
     FOOTER: "ᴘᴏᴡᴇʀᴇᴅ ʙʏ ɢɪғᴛᴇᴅ ᴛᴇᴄʜ",
     CAPTION: "©𝟐𝟎𝟐𝟓 𝐀𝐓𝐀𝐒𝐒𝐀-𝐌𝐃 𝐕𝟓",
@@ -62,7 +62,7 @@ const DEFAULT_SETTINGS = {
     AUTO_BLOCK: "",
     YT: "youtube.com/@giftedtechnexus",
     NEWSLETTER_JID: "120363426409647211@newsletter",
-    GC_JID: "LZE4CoZNhLB28z5jtqwNLA",
+    GC_JID: "GuS93JhyfyE56LOV3ZJTFZ",
     NEWSLETTER_URL: "https://whatsapp.com/channel/0029VbCpYtZLtOj5LDuj7Q1p",
     BOT_REPO: "mauricegift/atassa",
     PACK_NAME: "𝐀𝐓𝐀𝐒𝐒𝐀-𝐌𝐃",
